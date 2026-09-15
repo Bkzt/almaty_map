@@ -350,14 +350,20 @@ class PoliteSession:
         headers: dict | None = None,
         refresh: bool = False,
         cache: bool = True,
+        respect_robots: bool | None = None,
     ) -> str:
-        """GET ``url`` and return the body as text (cached copy if available)."""
+        """GET ``url`` and return the body as text (cached copy if available).
+
+        ``respect_robots`` overrides the session default for this one call. Pass ``False`` for an
+        authenticated call to an official API (e.g. the Geocoder) – robots.txt governs web crawlers
+        discovering pages, not a developer's own key-authenticated request to a documented HTTP API.
+        """
         full_url = self._full_url(url, params)
         cache_path = self._cache_path(full_url) if (self.use_cache and cache) else None
         if cache_path and not (refresh or self.refresh) and cache_path.exists():
             self.stats["cache_hits"] += 1
             return cache_path.read_text(encoding="utf-8")
-        resp = self._fetch(full_url, headers)
+        resp = self._fetch(full_url, headers, respect_robots)
         text = resp.text
         if cache_path:
             cache_path.parent.mkdir(parents=True, exist_ok=True)
@@ -399,8 +405,8 @@ class PoliteSession:
             self._last_request_at = time.monotonic()
             self.stats["network"] += 1
 
-    def _allowed_by_robots(self, url: str) -> bool:
-        if not self.respect_robots:
+    def _allowed_by_robots(self, url: str, respect_robots: bool | None) -> bool:
+        if not (self.respect_robots if respect_robots is None else respect_robots):
             return True
         parts = urlsplit(url)
         host = f"{parts.scheme}://{parts.netloc}"
@@ -419,8 +425,8 @@ class PoliteSession:
         rp = self._robots[host]
         return True if rp is None else rp.can_fetch("almaty-build-map", url)
 
-    def _fetch(self, url: str, headers: dict | None) -> requests.Response:
-        if not self._allowed_by_robots(url):
+    def _fetch(self, url: str, headers: dict | None, respect_robots: bool | None = None) -> requests.Response:
+        if not self._allowed_by_robots(url, respect_robots):
             raise RobotsDisallowed(url)
         last_error: str = ""
         for attempt in range(self.max_retries + 1):
@@ -511,7 +517,8 @@ class Geocoder:
             "rspn": 1,
         }
         self.requests_made += 1
-        data = self.session.get_json(self.URL, params=params, cache=False)  # never cache the key on disk
+        # never cache the key on disk; robots.txt governs crawlers, not our own key-authenticated API call
+        data = self.session.get_json(self.URL, params=params, cache=False, respect_robots=False)
         members = data.get("response", {}).get("GeoObjectCollection", {}).get("featureMember", [])
         if not members:
             log.warning("geocoder: nothing found for %r", query)

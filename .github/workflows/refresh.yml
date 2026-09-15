@@ -83,6 +83,8 @@ jobs:
           cp index.html site/
           cp data/projects.geojson data/roads.csv data/geocode_cache.json site/data/
       - uses: actions/configure-pages@v5
+        with:
+          enablement: true   # switch Pages on automatically the first time
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
