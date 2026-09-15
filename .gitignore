@@ -1,0 +1,13 @@
+# raw HTML cache written by scraper/common.py PoliteSession – never commit
+scraper/.cache/
+# smoke-test output of `python -m scraper.build --limit N`
+data/projects.sample.geojson
+data/*.tmp
+# python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+# GitHub Pages staging dir built by the workflow
+site/
+.DS_Store

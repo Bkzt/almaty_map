@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Стройки Алматы: карта и сроки</title>
+<meta name="description" content="Карта строек Алматы: жилые комплексы, дороги и госстройки со сроками сдачи. Данные обновляются раз в неделю.">
+<style>
+:root{
+  --apartments:#2563eb; --road:#f59e0b; --repair:#7c3aed; --other:#6b7280; --overdue:#dc2626;
+  --bg:#fff; --fg:#111827; --muted:#6b7280; --border:#e5e7eb; --shadow:0 4px 18px rgba(0,0,0,.18); --radius:12px;
+  --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+}
+html,body{margin:0;height:100%;font-family:var(--font);color:var(--fg);background:#e9edf1}
+[hidden]{display:none!important}
+button{font-family:inherit}
+#map{position:fixed;inset:0}
+.panel{position:fixed;top:12px;left:12px;z-index:5;width:300px;max-height:calc(100vh - 24px);display:flex;flex-direction:column;background:var(--bg);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
+.panel__head{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid var(--border)}
+.panel__title{font-size:17px;margin:0;font-weight:700}
+.panel__updated{font-size:12px;color:var(--muted);margin-top:2px}
+.panel__toggle{display:none;border:1px solid var(--border);background:#f9fafb;border-radius:8px;padding:7px 12px;font-size:13px;cursor:pointer;flex:none}
+.panel__body{padding:10px 14px 12px;overflow:auto}
+.check{display:flex;align-items:center;gap:8px;padding:5px 0;font-size:14px;cursor:pointer;user-select:none}
+.check input{margin:0;width:16px;height:16px;flex:none}
+.check .count{margin-left:auto;font-size:12px;color:var(--muted);white-space:nowrap}
+.count__overdue{color:var(--overdue);font-weight:600}
+.count__done{text-decoration:line-through;opacity:.8}
+.check--done{border-top:1px solid var(--border);margin-top:6px;padding-top:9px;font-size:13px;color:#374151}
+.dot{display:inline-block;width:12px;height:12px;border-radius:50%;background:#999;flex:none;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.15);box-sizing:content-box}
+.dot--overdue{background:#fff;box-shadow:0 0 0 2px var(--overdue)}
+.dot--line{width:18px;height:4px;border-radius:2px;border:0;box-shadow:none}
+.legend{font-size:12px;color:var(--muted);margin-top:8px;display:flex;flex-direction:column;gap:5px}
+.legend__item{display:flex;align-items:center;gap:8px}
+.warn{margin-top:8px;font-size:12px;color:#92400e;background:#fef3c7;border-radius:8px;padding:6px 8px;line-height:1.4}
+.fallback{margin-top:10px;border-top:1px solid var(--border);padding-top:8px;font-size:13px}
+.fallback__title{font-weight:600;margin:0 0 4px}
+.fallback ol{margin:0;padding:0;list-style:none}
+.fallback li{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #f3f4f6}
+.fallback li button{flex:1;min-width:0;text-align:left;background:none;border:0;padding:0;cursor:pointer;color:var(--fg);font-size:13px;line-height:1.3}
+.fallback li button small{display:block;color:var(--muted)}
+.fallback__more{color:var(--muted);padding:6px 0}
+.pin{width:14px;height:14px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.3),0 1px 3px rgba(0,0,0,.3);transform:translate(-50%,-50%);cursor:pointer;box-sizing:border-box}
+.pin:hover{transform:translate(-50%,-50%) scale(1.35)}
+.pin--overdue{box-shadow:0 0 0 3px var(--overdue),0 1px 3px rgba(0,0,0,.3)}
+.pin--done{opacity:.5}
+.cluster{min-width:32px;height:32px;padding:0 6px;box-sizing:border-box;border-radius:16px;background:#1e3a8a;color:#fff;font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35);transform:translate(-50%,-50%);cursor:pointer}
+.cluster--m{min-width:38px;height:38px;border-radius:19px}
+.cluster--l{min-width:46px;height:46px;border-radius:23px;font-size:14px}
+.cluster--overdue{box-shadow:0 0 0 3px var(--overdue),0 1px 4px rgba(0,0,0,.35)}
+.popup{position:relative;width:300px;transform:translate(-50%,calc(-100% - 16px));background:var(--bg);border-radius:var(--radius);box-shadow:var(--shadow);cursor:default}
+.popup::after{content:"";position:absolute;left:50%;bottom:-7px;width:14px;height:14px;background:var(--bg);transform:translateX(-50%) rotate(45deg)}
+.card{position:relative;padding:14px 16px 12px;font-size:13px;line-height:1.45}
+.card__close{position:absolute;top:4px;right:6px;border:0;background:none;font-size:24px;line-height:1;cursor:pointer;color:var(--muted);padding:4px 8px}
+.card__cat{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px;padding-right:28px;flex-wrap:wrap}
+.card__title{font-size:16px;margin:4px 0 8px;font-weight:700;padding-right:24px;line-height:1.3}
+.card__row{display:grid;grid-template-columns:82px 1fr;gap:6px;padding:2px 0}
+.card__k{color:var(--muted)}
+.deadline{font-weight:600;cursor:help;border-bottom:1px dotted #9ca3af}
+.deadline--overdue{color:var(--overdue)}
+.deadline__exact{display:none;margin-left:6px;color:var(--muted);font-size:12px}
+.deadline:hover+.deadline__exact,.deadline:focus+.deadline__exact,.is-open>.deadline__exact{display:inline}
+.overdue-badge{color:var(--overdue)}
+.card__link{display:inline-block;margin-top:8px;color:#1d4ed8;text-decoration:none;font-weight:600}
+.card__link:hover{text-decoration:underline}
+.card__list{margin:6px 0 0;padding:0;list-style:none;max-height:40vh;overflow:auto}
+.card__list li{border-top:1px solid #f3f4f6}
+.card__list button{width:100%;text-align:left;background:none;border:0;padding:7px 0;cursor:pointer;color:var(--fg);font-size:13px;display:flex;gap:8px;align-items:center}
+.sheet{position:fixed;right:12px;bottom:12px;width:320px;z-index:7;background:var(--bg);border-radius:var(--radius);box-shadow:var(--shadow);max-height:60vh;overflow:auto}
+.notice{position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:8;max-width:min(560px,calc(100vw - 24px));background:#111827;color:#fff;padding:10px 14px;border-radius:10px;font-size:13px;line-height:1.45;box-shadow:var(--shadow)}
+.notice code{background:rgba(255,255,255,.15);padding:1px 5px;border-radius:4px}
+.notice button{float:right;margin:-4px -6px 0 10px;border:0;background:none;color:#fff;font-size:20px;cursor:pointer;line-height:1}
+.zoom{position:fixed;right:12px;top:50%;transform:translateY(-50%);z-index:5;display:flex;flex-direction:column;gap:6px}
+.zoom button{width:38px;height:38px;border:0;border-radius:8px;background:var(--bg);box-shadow:var(--shadow);font-size:20px;cursor:pointer;color:var(--fg)}
+@media (max-width:640px){
+  .panel{top:auto;bottom:0;left:0;right:0;width:auto;max-height:70vh;border-radius:var(--radius) var(--radius) 0 0;padding-bottom:env(safe-area-inset-bottom)}
+  .panel__toggle{display:block}
+  .panel__body{display:none}
+  .panel--open .panel__body{display:block}
+  .zoom{display:none}
+  .sheet{left:0;right:0;bottom:0;width:auto;border-radius:var(--radius) var(--radius) 0 0;max-height:65vh;padding-bottom:env(safe-area-inset-bottom)}
+}
+</style>
+</head>
+<body>
+<div id="map" role="application" aria-label="Карта строек Алматы"></div>
+<div class="zoom" id="zoom" hidden>
+  <button id="zoom-in" type="button" aria-label="Приблизить">+</button>
+  <button id="zoom-out" type="button" aria-label="Отдалить">−</button>
+</div>
+<aside id="panel" class="panel">
+  <header class="panel__head">
+    <div>
+      <h1 class="panel__title">Стройки Алматы</h1>
+      <div class="panel__updated" id="updated">Загрузка…</div>
+    </div>
+    <button class="panel__toggle" id="panel-toggle" type="button" aria-expanded="false" aria-controls="panel-body">Фильтры</button>
+  </header>
+  <div class="panel__body" id="panel-body">
+    <div id="filters"></div>
+    <label class="check check--done"><input type="checkbox" id="show-done"><span>показывать сданные / завершённые</span></label>
+    <div class="legend">
+      <span class="legend__item"><i class="dot dot--overdue"></i>красная обводка — срок прошёл, объект не сдан</span>
+      <span class="legend__item"><i class="dot dot--line" style="background:var(--road)"></i>линия — участок улицы</span>
+    </div>
+    <div id="feed-warning" class="warn" hidden></div>
+    <div id="fallback" class="fallback" hidden></div>
+  </div>
+</aside>
+<div id="sheet" class="sheet" hidden></div>
+<div id="notice" class="notice" hidden></div>
+
+<script>
+/* ============================== CONFIG ============================== */
+// 1. Get a free key in the Yandex developer cabinet: https://developer.tech.yandex.ru/
+//    (service "JavaScript API и HTTP Геокодер"; the same key is used by scraper/roads.py).
+// 2. Paste it below. This is the only line you need to edit in this file.
+const YANDEX_MAPS_API_KEY = "a880fadf-8563-435e-b4c3-84f55b115131";
+const DATA_URL = "data/projects.geojson";
+const ALMATY = { center: [76.889, 43.238], zoom: 11 }; // [lon, lat] – GeoJSON / Yandex 3.0 order
+/* ==================================================================== */
+
+const CATEGORIES = {
+  apartments: { label: "Жилые комплексы", hex: "#2563eb" },
+  road:       { label: "Дороги", hex: "#f59e0b" },
+  repair:     { label: "Ремонт и госстройки", hex: "#7c3aed" },
+  other:      { label: "Прочее", hex: "#6b7280" },
+};
+const OVERDUE_HEX = "#dc2626";
+const STATUS_LABEL = { planned: "планируется", in_progress: "строится", done: "сдан" };
+const FALLBACK_LIMIT = 300;
+
+const state = {
+  features: [], generatedAt: null, feeds: null,
+  enabled: new Set(Object.keys(CATEGORIES)), showDone: false,
+  today: todayISO(), mapReady: false,
+};
+let map = null, clusterer = null, popupMarker = null;
+let lineEntities = [];
+
+function $(id) { return document.getElementById(id); }
+function pad(n) { return String(n).padStart(2, "0"); }
+function todayISO() { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
+function esc(s) { return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+function quarterLabel(iso) { if (!iso) return null; const [y, m] = iso.split("-").map(Number); return `Q${Math.ceil(m / 3)} ${y}`; }
+function formatDate(iso) { if (!iso) return ""; const [y, m, d] = iso.split("-"); return `${d}.${m}.${y}`; }
+function isOverdue(p) { return Boolean(p.deadline) && p.status !== "done" && p.deadline < state.today; }
+function isVisible(p) { return state.enabled.has(p.category) && (state.showDone || p.status !== "done"); }
+function visibleFeatures() { return state.features.filter((f) => isVisible(f.properties)); }
+function isMobile() { return window.matchMedia("(max-width: 640px)").matches; }
+function categoryOf(p) { return CATEGORIES[p.category] || CATEGORIES.other; }
+function anchorOf(feature) {
+  const c = feature.geometry.coordinates;
+  if (feature.geometry.type === "Point") return c;
+  const i = Math.floor((c.length - 1) / 2), a = c[i], b = c[Math.min(i + 1, c.length - 1)];
+  return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+}
+
+/* ------------------------------ data ------------------------------ */
+async function loadData() {
+  const res = await fetch(DATA_URL, { cache: "no-cache" });
+  if (!res.ok) throw new Error(`${DATA_URL}: HTTP ${res.status}`);
+  const data = await res.json();
+  state.features = (data.features || []).filter((f) => f && f.geometry && f.properties && f.properties.id);
+  state.generatedAt = data.generated_at || null;
+  state.feeds = data.feeds || null;
+}
+
+/* ------------------------------ panel ------------------------------ */
+function renderUpdated() {
+  const el = $("updated");
+  if (!state.generatedAt) { el.textContent = "дата обновления неизвестна"; return; }
+  const d = new Date(state.generatedAt);
+  el.textContent = "Обновлено: " + (isNaN(d) ? state.generatedAt
+    : d.toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" }));
+  el.title = state.generatedAt;
+}
+
+function renderFeedWarning() {
+  const failed = Object.entries(state.feeds || {}).filter(([, v]) => v && v.status === "failed").map(([k]) => k);
+  const el = $("feed-warning");
+  el.hidden = failed.length === 0;
+  if (failed.length) el.textContent = `Источник не обновился: ${failed.join(", ")} — показаны данные прошлого запуска.`;
+}
+
+function renderFilters() {
+  const counts = {};
+  for (const f of state.features) {
+    const p = f.properties;
+    const c = counts[p.category] || (counts[p.category] = { active: 0, done: 0, overdue: 0 });
+    if (p.status === "done") c.done++; else c.active++;
+    if (isOverdue(p)) c.overdue++;
+  }
+  $("filters").innerHTML = Object.entries(CATEGORIES).map(([key, cat]) => {
+    const c = counts[key] || { active: 0, done: 0, overdue: 0 };
+    const parts = [`${c.active}`];
+    if (c.overdue) parts.push(`<b class="count__overdue" title="просрочено">${c.overdue}</b>`);
+    if (c.done) parts.push(`<span class="count__done" title="сдано / завершено">${c.done}</span>`);
+    return `<label class="check"><input type="checkbox" data-category="${key}"${state.enabled.has(key) ? " checked" : ""}>` +
+      `<i class="dot" style="background:${cat.hex}"></i><span>${cat.label}</span>` +
+      `<span class="count" title="в работе · просрочено · сдано">${parts.join(" · ")}</span></label>`;
+  }).join("");
+  $("filters").querySelectorAll("input[data-category]").forEach((el) => {
+    el.addEventListener("change", () => {
+      if (el.checked) state.enabled.add(el.dataset.category); else state.enabled.delete(el.dataset.category);
+      applyFilters();
+    });
+  });
+}
+
+function renderFallbackList(visible) {
+  const box = $("fallback");
+  if (state.mapReady) { box.hidden = true; return; }
+  const sorted = visible.slice().sort((a, b) => {
+    const da = a.properties.deadline || "9999", db = b.properties.deadline || "9999";
+    return da < db ? -1 : da > db ? 1 : a.properties.name.localeCompare(b.properties.name, "ru");
+  });
+  const items = sorted.slice(0, FALLBACK_LIMIT).map((f) => {
+    const p = f.properties, q = quarterLabel(p.deadline);
+    return `<li><i class="dot" style="background:${categoryOf(p).hex}"></i><button type="button" data-id="${esc(p.id)}">${esc(p.name)}` +
+      `<small>${q ? `<span class="${isOverdue(p) ? "deadline--overdue" : ""}">${q}</span>` : "срок не указан"}${p.builder ? " · " + esc(p.builder) : ""}</small></button></li>`;
+  }).join("");
+  const more = sorted.length > FALLBACK_LIMIT ? `<div class="fallback__more">… и ещё ${sorted.length - FALLBACK_LIMIT}</div>` : "";
+  box.innerHTML = `<p class="fallback__title">Объекты (${sorted.length})</p><ol>${items}</ol>${more}`;
+  box.hidden = false;
+  box.querySelectorAll("button[data-id]").forEach((btn) => btn.addEventListener("click", () => {
+    const f = state.features.find((x) => x.properties.id === btn.dataset.id);
+    if (f) openPopup(f.properties, anchorOf(f));
+  }));
+}
+
+/* ------------------------------ popup ------------------------------ */
+function renderCard(p) {
+  const cat = categoryOf(p), overdue = isOverdue(p), q = quarterLabel(p.deadline);
+  const deadline = p.deadline
+    ? `<span class="deadline${overdue ? " deadline--overdue" : ""}" title="${formatDate(p.deadline)}" tabindex="0">${q}</span>` +
+      `<span class="deadline__exact">${formatDate(p.deadline)}</span>`
+    : `<span class="card__k">срок не указан</span>`;
+  const row = (k, v) => v ? `<div class="card__row"><span class="card__k">${k}</span><span>${v}</span></div>` : "";
+  return `<div class="card">
+    <button class="card__close" type="button" aria-label="Закрыть" data-close>×</button>
+    <div class="card__cat"><i class="dot" style="background:${cat.hex}"></i>${esc(cat.label)} · ${esc(STATUS_LABEL[p.status] || p.status)}${overdue ? ' · <b class="overdue-badge">просрочено</b>' : ""}</div>
+    <h2 class="card__title">${esc(p.name)}</h2>
+    ${row("Кто строит", esc(p.builder))}
+    ${row("Срок", deadline)}
+    ${row("Этап", esc(p.stage_note))}
+    ${row("Адрес", esc(p.address))}
+    ${p.started_at ? row("Начало", esc(quarterLabel(p.started_at))) : ""}
+    <a class="card__link" href="${esc(p.source_url)}" target="_blank" rel="noopener noreferrer">Источник ↗</a>
+  </div>`;
+}
+
+function renderListCard(features) {
+  const items = features.map((f) => {
+    const p = f.properties, q = quarterLabel(p.deadline);
+    return `<li><button type="button" data-id="${esc(p.id)}"><i class="dot" style="background:${categoryOf(p).hex}"></i>` +
+      `<span>${esc(p.name)}${q ? ` <span class="${isOverdue(p) ? "deadline--overdue" : "card__k"}">${q}</span>` : ""}</span></button></li>`;
+  }).join("");
+  return `<div class="card"><button class="card__close" type="button" aria-label="Закрыть" data-close>×</button>
+    <h2 class="card__title">${features.length} объектов в этой точке</h2><ul class="card__list">${items}</ul></div>`;
+}
+
+function bindCard(root) {
+  root.querySelectorAll("[data-close]").forEach((b) => b.addEventListener("click", closePopup));
+  root.querySelectorAll(".deadline").forEach((el) => el.addEventListener("click", () => el.parentElement.classList.toggle("is-open")));
+  root.querySelectorAll("button[data-id]").forEach((btn) => btn.addEventListener("click", () => {
+    const f = state.features.find((x) => x.properties.id === btn.dataset.id);
+    if (f) openPopup(f.properties, anchorOf(f));
+  }));
+}
+
+function showCard(html, coordinates) {
+  closePopup();
+  if (state.mapReady && !isMobile()) {
+    const el = document.createElement("div");
+    el.className = "popup";
+    el.innerHTML = html;
+    bindCard(el);
+    popupMarker = new ymaps3.YMapMarker({ coordinates, zIndex: 1000, blockBehaviors: true }, el);
+    map.addChild(popupMarker);
+    return;
+  }
+  const sheet = $("sheet");
+  sheet.innerHTML = html;
+  sheet.hidden = false;
+  bindCard(sheet);
+}
+
+function openPopup(props, coordinates) { showCard(renderCard(props), coordinates); }
+function openListPopup(features, coordinates) { showCard(renderListCard(features), coordinates); }
+
+function closePopup() {
+  if (popupMarker) { map.removeChild(popupMarker); popupMarker = null; }
+  const sheet = $("sheet");
+  sheet.hidden = true;
+  sheet.innerHTML = "";
+}
+
+/* ------------------------------ map ------------------------------ */
+function loadYandexApi() {
+  return new Promise((resolve, reject) => {
+    if (!YANDEX_MAPS_API_KEY || YANDEX_MAPS_API_KEY.startsWith("PASTE_")) { reject(new Error("no-key")); return; }
+    const s = document.createElement("script");
+    s.src = "https://api-maps.yandex.ru/v3/?apikey=" + encodeURIComponent(YANDEX_MAPS_API_KEY) + "&lang=ru_RU";
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error("load-failed"));
+    document.head.appendChild(s);
+  });
+}
+
+function makeMarker(feature) {
+  const p = feature.properties;
+  const el = document.createElement("div");
+  el.className = "pin" + (isOverdue(p) ? " pin--overdue" : "") + (p.status === "done" ? " pin--done" : "");
+  el.style.background = categoryOf(p).hex;
+  el.title = p.name + (p.deadline ? ` · ${quarterLabel(p.deadline)}` : "");
+  return new ymaps3.YMapMarker(
+    { coordinates: feature.geometry.coordinates, onClick: () => openPopup(p, feature.geometry.coordinates) },
+    el,
+  );
+}
+
+function makeCluster(coordinates, features) {
+  const n = features.length;
+  const el = document.createElement("div");
+  el.className = "cluster" + (n >= 100 ? " cluster--l" : n >= 10 ? " cluster--m" : "") +
+    (features.some((f) => isOverdue(f.properties)) ? " cluster--overdue" : "");
+  el.textContent = n;
+  el.title = `${n} объектов`;
+  return new ymaps3.YMapMarker({
+    coordinates,
+    onClick: () => {
+      closePopup();
+      if (map.zoom >= 16) openListPopup(features, coordinates);
+      else map.setLocation({ center: coordinates, zoom: Math.min(map.zoom + 2, 19), duration: 300 });
+    },
+  }, el);
+}
+
+async function initMap() {
+  await ymaps3.ready;
+  const { YMap, YMapDefaultSchemeLayer, YMapDefaultFeaturesLayer, YMapListener } = ymaps3;
+  const { YMapClusterer, clusterByGrid } = await ymaps3.import("@yandex/ymaps3-clusterer@0.0.1")  // versioned: the loader has no unversioned package;
+
+  map = new YMap($("map"), { location: { center: ALMATY.center, zoom: ALMATY.zoom }, zoomRange: { min: 9, max: 19 } });
+  map.addChild(new YMapDefaultSchemeLayer({}));
+  map.addChild(new YMapDefaultFeaturesLayer({}));
+  map.addChild(new YMapListener({
+    onClick: (object, event) => {
+      if (!object) { closePopup(); return; }               // empty map → close popup
+      if (object.type === "feature") {                       // road segment (YMapFeature)
+        const p = object.entity.properties;
+        if (p && p.id) openPopup(p, event.coordinates);
+      }
+    },
+  }));
+  clusterer = new YMapClusterer({ method: clusterByGrid({ gridSize: 64 }), features: [], marker: makeMarker, cluster: makeCluster });
+  map.addChild(clusterer);
+
+  state.mapReady = true;
+  $("zoom").hidden = false;
+  $("zoom-in").addEventListener("click", () => map.setLocation({ zoom: Math.min(map.zoom + 1, 19), duration: 200 }));
+  $("zoom-out").addEventListener("click", () => map.setLocation({ zoom: Math.max(map.zoom - 1, 9), duration: 200 }));
+}
+
+function applyFilters() {
+  const visible = visibleFeatures();
+  if (state.mapReady) {
+    closePopup();
+    const points = visible.filter((f) => f.geometry.type === "Point").map((f) => ({
+      type: "Feature", id: f.properties.id,
+      geometry: { type: "Point", coordinates: f.geometry.coordinates },
+      properties: f.properties,
+    }));
+    clusterer.update({ features: points });
+    for (const ent of lineEntities) map.removeChild(ent);
+    lineEntities = [];
+    for (const f of visible) {
+      if (f.geometry.type !== "LineString") continue;
+      const p = f.properties;
+      const color = isOverdue(p) ? OVERDUE_HEX : categoryOf(p).hex;
+      const ent = new ymaps3.YMapFeature({
+        id: p.id,
+        geometry: f.geometry,
+        properties: p,
+        style: { stroke: [{ color, width: 6, opacity: p.status === "done" ? 0.45 : 0.95 }] },
+      });
+      map.addChild(ent);
+      lineEntities.push(ent);
+    }
+  }
+  renderFallbackList(visible);
+}
+
+/* ------------------------------ boot ------------------------------ */
+function showNotice(html) {
+  const el = $("notice");
+  el.innerHTML = `<button type="button" aria-label="Закрыть">×</button>${html}`;
+  el.hidden = false;
+  el.querySelector("button").addEventListener("click", () => { el.hidden = true; });
+}
+
+(async function main() {
+  $("panel-toggle").addEventListener("click", () => {
+    const open = $("panel").classList.toggle("panel--open");
+    $("panel-toggle").setAttribute("aria-expanded", String(open));
+  });
+  $("show-done").addEventListener("change", (e) => { state.showDone = e.target.checked; renderFilters(); applyFilters(); });
+
+  try {
+    await loadData();
+  } catch (e) {
+    console.error(e);
+    showNotice(`Не удалось загрузить данные (${esc(e.message)}). Сгенерируйте файл командой <code>python -m scraper.build</code> ` +
+      `и откройте страницу через http-сервер (<code>python -m http.server</code>), а не как file://.`);
+  }
+  renderUpdated();
+  renderFilters();
+  renderFeedWarning();
+
+  try {
+    await loadYandexApi();
+    await initMap();
+  } catch (e) {
+    console.warn("map unavailable:", e);
+    showNotice(e.message === "no-key"
+      ? "Карта не подключена: вставьте ключ Yandex Maps API в <code>index.html</code> (константа <code>YANDEX_MAPS_API_KEY</code>). Пока доступен список объектов."
+      : "Не удалось загрузить Яндекс Карты. Проверьте ключ, его привязку к домену и доступ к api-maps.yandex.ru. Пока доступен список объектов.");
+    $("panel").classList.add("panel--open");
+  }
+  applyFilters();
+})();
+</script>
+</body>
+</html>

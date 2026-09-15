@@ -1,0 +1,90 @@
+# Weekly data refresh + GitHub Pages deployment (HANDOVER §6, §8 step 7).
+#
+# One-time setup in the repo settings:
+#   Settings → Pages → Source: "GitHub Actions"
+#   Settings → Secrets and variables → Actions:
+#     secrets  YANDEX_GEOCODER_KEY   (roads feed; optional – cached results still work without it)
+#     secrets  GOSZAKUP_TOKEN        (repairs feed; optional – feed stays disabled without it)
+#     variables CONTACT_EMAIL        (recommended: contact address in the User-Agent, HANDOVER §7; warning if unset)
+name: Refresh data and deploy
+
+on:
+  schedule:
+    - cron: "0 3 * * 1"        # Mondays 03:00 UTC = 08:00 Almaty
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["index.html", "data/**", "scraper/**", "requirements.txt", ".github/workflows/refresh.yml"]
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: refresh-and-deploy
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    # Only the cron / manual run crawls. A plain push just re-deploys what is committed.
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      CONTACT_EMAIL: ${{ vars.CONTACT_EMAIL }}
+      PROJECT_URL: ${{ github.server_url }}/${{ github.repository }}
+      YANDEX_GEOCODER_KEY: ${{ secrets.YANDEX_GEOCODER_KEY }}
+      GOSZAKUP_TOKEN: ${{ secrets.GOSZAKUP_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Unit tests (fixtures only, no network)
+        run: python -m pytest -q
+      - name: Build data/projects.geojson (~25 min, 1.5 s between requests)
+        id: build
+        continue-on-error: true   # a failed feed keeps its previous data; we still commit + deploy
+        run: python -m scraper.build
+      - name: Commit refreshed data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/projects.geojson data/geocode_cache.json
+          if git diff --cached --quiet; then
+            echo "no data changes"
+          else
+            git commit -m "data: refresh $(date -u +%Y-%m-%d)"
+            git push
+          fi
+      - name: Mark the run red if a feed failed
+        if: steps.build.outcome == 'failure'
+        run: |
+          echo "::error::scraper.build reported a failed feed – see the build step log"
+          exit 1
+
+  deploy:
+    needs: [refresh]
+    if: always() && needs.refresh.result != 'cancelled'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main            # includes the commit the refresh job just pushed
+      - name: Assemble the static site (index.html + data/)
+        run: |
+          mkdir -p site/data
+          cp index.html site/
+          cp data/projects.geojson data/roads.csv data/geocode_cache.json site/data/
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v4
